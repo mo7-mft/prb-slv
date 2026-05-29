@@ -551,33 +551,39 @@ except Exception as e:
   tLog('\n─────────────────────────────', 'sep');
   if (allPassed) {
     tLog('🎉 جميع الـ test cases صحيحة!', 'pass');
-    tLog('⏳ سيتم إغلاق المحرر وإضافة النقاط خلال 5 ثواني...', 'info');
+    tLog('⏳ إضافة النقاط خلال 5 ثواني...', 'info');
 
-    // عداد تنازلي
     let sec = 5;
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       sec--;
       if (sec > 0) {
         tLog(`${sec}...`, 'warn');
       } else {
         clearInterval(interval);
-        // إرسال للبوت وإغلاق
-        const code    = editor.getValue().trim();
-        const payload = JSON.stringify({ code, slug, title, passed: true });
+        const code   = editor.getValue().trim();
+        const chatId = tg.initDataUnsafe?.user?.id;
+
+        // نحاول sendData أولاً
+        let sent = false;
         try {
-          tg.sendData(payload);
-        } catch(e) {
-          // fallback: Bot API
-          const chatId = tg.initDataUnsafe?.user?.id;
-          if (chatId) {
-            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          tg.sendData(JSON.stringify({ code, slug, title, passed: true }));
+          sent = true;
+        } catch(e) {}
+
+        // لو sendData فشل نستخدم Bot API
+        if (!sent && chatId) {
+          try {
+            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ chat_id: chatId, text: `__WEBAPP_CODE__\n${code}` })
-            }).then(() => tg.close());
-            return;
-          }
+            });
+          } catch(e) {}
         }
+
+        tg.close();
+      }
+    }, 1000);
         tg.close();
       }
     }, 1000);
