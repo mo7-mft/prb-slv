@@ -197,8 +197,7 @@ footer {
 </div>
 
 <footer>
-  <button class="btn-run"    id="runBtn"    onclick="runCode()">▶ تشغيل</button>
-  <button class="btn-submit" id="submitBtn" onclick="submitCode()">✅ إرسال للبوت</button>
+  <button class="btn-run" id="runBtn" onclick="runCode()">▶ تشغيل</button>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -477,6 +476,7 @@ let pyodide = null;
 // تشغيل الكود
 // ══════════════════════════════
 let lastResults = [];
+const BOT_TOKEN = "8705856236:AAHvKas1uWFoRTSTEHPuin_3EVt0Uygtrik";
 
 async function runCode() {
   if (!pyodide) { showToast('⏳ Python لسا بتحمّل...'); return; }
@@ -551,11 +551,41 @@ except Exception as e:
 
   tLog('\n─────────────────────────────', 'sep');
   if (allPassed) {
-    tLog('🎉 جميع الـ test cases صحيحة! اضغط "إرسال للبوت"', 'pass');
-    document.getElementById('submitBtn').classList.add('show');
+    tLog('🎉 جميع الـ test cases صحيحة!', 'pass');
+    tLog('⏳ سيتم إغلاق المحرر وإضافة النقاط خلال 5 ثواني...', 'info');
+
+    // عداد تنازلي
+    let sec = 5;
+    const interval = setInterval(() => {
+      sec--;
+      if (sec > 0) {
+        tLog(`${sec}...`, 'warn');
+      } else {
+        clearInterval(interval);
+        // إرسال للبوت وإغلاق
+        const code    = editor.getValue().trim();
+        const payload = JSON.stringify({ code, slug, title, passed: true });
+        try {
+          tg.sendData(payload);
+        } catch(e) {
+          // fallback: Bot API
+          const chatId = tg.initDataUnsafe?.user?.id;
+          if (chatId) {
+            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chat_id: chatId, text: `__WEBAPP_CODE__\n${code}` })
+            }).then(() => tg.close());
+            return;
+          }
+        }
+        tg.close();
+      }
+    }, 1000);
+
   } else {
     const failed = lastResults.filter(r=>!r.passed).length;
-    tLog(`❌ ${failed} من ${testCases.length} test cases غلط`, 'fail');
+    tLog(`❌ ${failed} من ${testCases.length} test cases غلط، راجع الكود`, 'fail');
   }
 
   // تحديث بطاقات الـ tests
@@ -596,55 +626,6 @@ function renderTestCards() {
 }
 
 // ══════════════════════════════
-// إرسال للبوت
-// ══════════════════════════════
-const BOT_TOKEN = "8705856236:AAHvKas1uWFoRTSTEHPuin_3EVt0Uygtrik";
-
-async function submitCode() {
-  const code    = editor.getValue().trim();
-  const btn     = document.getElementById('submitBtn');
-  const payload = JSON.stringify({ code, slug, title, passed: true });
-
-  btn.disabled = true;
-  btn.textContent = '⏳ جاري الإرسال...';
-
-  // محاولة sendData
-  try {
-    tg.sendData(payload);
-    return;
-  } catch(e) {}
-
-  // fallback: Bot API
-  const chatId = tg.initDataUnsafe?.user?.id;
-  if (!chatId) {
-    showToast('❌ تعذّر الإرسال');
-    btn.disabled = false;
-    btn.textContent = '✅ إرسال للبوت';
-    return;
-  }
-
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ chat_id: chatId, text: `__WEBAPP_CODE__\n${code}` })
-    });
-    const data = await res.json();
-    if (data.ok) {
-      tg.close();
-    } else {
-      showToast('❌ خطأ: ' + (data.description || 'unknown'));
-      btn.disabled = false;
-      btn.textContent = '✅ إرسال للبوت';
-    }
-  } catch(e) {
-    showToast('❌ خطأ في الاتصال');
-    btn.disabled = false;
-    btn.textContent = '✅ إرسال للبوت';
-  }
-}
-
-// ══════════════════════════════
 // مسح
 // ══════════════════════════════
 function resetEditor() {
@@ -652,7 +633,6 @@ function resetEditor() {
   editor.setCursor({line:3, ch:8});
   editor.focus();
   switchTab('editor');
-  document.getElementById('submitBtn').classList.remove('show');
   lastResults = [];
 }
 
