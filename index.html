@@ -553,23 +553,26 @@ except Exception as e:
         tLog(`${sec}...`, 'warn');
       } else {
         clearInterval(interval);
-        const userCode = editor.getValue().trim();
-        const chatId   = tg.initDataUnsafe?.user?.id;
+        const chatId = tg.initDataUnsafe?.user?.id;
+        const signal = JSON.stringify({ action: 'solve', slug, title, passed: true });
 
-        // نحاول sendData أولاً
+        // نحاول sendData أولاً (يشتغل لو فُتح من زر web_app مباشرة)
         let sent = false;
         try {
-          tg.sendData(JSON.stringify({ code: userCode, slug, title, passed: true }));
+          tg.sendData(signal);
           sent = true;
         } catch(e) {}
 
-        // لو sendData فشل نستخدم Bot API
+        // fallback: Bot API بدون ما يظهر الكود في الشات
         if (!sent && chatId) {
           try {
             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: chatId, text: `__WEBAPP_CODE__\n${userCode}` })
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: `__SOLVED__\n${JSON.stringify({ slug, title, passed: true })}`
+              })
             });
           } catch(e) {}
         }
