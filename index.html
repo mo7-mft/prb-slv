@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>محرر الكود</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<style>
+:root {
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --border:  #30363d;
+  --green:   #3fb950;
+  --red:     #f85149;
+  --yellow:  #e3b341;
+  --blue:    #58a6ff;
+  --text:    #e6edf3;
+  --muted:   #8b949e;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body {
+  height:100dvh; background:var(--bg); color:var(--text);
+  font-family:'Tajawal',sans-serif; display:flex;
+  flex-direction:column; overflow:hidden;
+}
+
+/* Header */
+header {
+  background:var(--surface); border-bottom:1px solid var(--border);
+  padding:8px 12px; display:flex; align-items:center;
+  justify-content:space-between; flex-shrink:0;
+}
+.h-left { display:flex; flex-direction:column; gap:1px; }
+.h-label { font-size:10px; color:var(--muted); }
+.h-title { font-size:13px; font-weight:700; display:flex; align-items:center; gap:6px; }
+.badge {
+  background:#1f2937; border:1px solid var(--border);
+  color:var(--blue); font-family:'IBM Plex Mono',monospace;
+  font-size:10px; padding:1px 6px; border-radius:3px;
+}
+.btn-clear {
+  background:none; border:1px solid var(--border); color:var(--muted);
+  padding:5px 10px; border-radius:6px; font-family:'Tajawal',sans-serif;
+  font-size:12px; cursor:pointer; transition:all .2s;
+}
+.btn-clear:hover { border-color:var(--red); color:var(--red); }
+
+/* Tabs */
+.tabs {
+  display:flex; background:var(--surface);
+  border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.tab {
+  padding:7px 14px; font-size:12px; cursor:pointer;
+  color:var(--muted); border-bottom:2px solid transparent; transition:all .2s;
+}
+.tab.active { color:var(--blue); border-bottom-color:var(--blue); }
+
+/* Panels */
+.panel { flex:1; overflow:hidden; display:none; flex-direction:column; }
+.panel.active { display:flex; }
+
+/* Editor */
+#editorPanel { display:none; }
+#editorPanel.active { display:flex; flex-direction:column; }
+.CodeMirror {
+  flex:1; height:100% !important; font-family:'IBM Plex Mono',monospace;
+  font-size:13px; line-height:1.6; background:var(--bg) !important;
+}
+.CodeMirror-scroll { height:100%; }
+.CodeMirror-gutters { background:var(--bg) !important; border-right:1px solid var(--border) !important; }
+.CodeMirror-linenumber { color:var(--muted) !important; }
+.CodeMirror-activeline-background { background:rgba(88,166,255,.05) !important; }
+
+/* Terminal */
+.terminal {
+  flex:1; overflow-y:auto; padding:10px 12px;
+  font-family:'IBM Plex Mono',monospace; font-size:12px; line-height:1.7;
+}
+.tl { margin-bottom:1px; white-space:pre-wrap; word-break:break-all; }
+.tl.info  { color:var(--muted); }
+.tl.pass  { color:var(--green); }
+.tl.fail  { color:var(--red); }
+.tl.warn  { color:var(--yellow); }
+.tl.out   { color:var(--text); }
+.tl.err   { color:var(--red); }
+.tl.sep   { color:#21262d; }
+
+/* Tests panel */
+.tests-list { flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:8px; }
+.test-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:10px 12px;
+}
+.test-card.pass { border-color:var(--green); }
+.test-card.fail { border-color:var(--red); }
+.test-title { font-size:12px; color:var(--muted); margin-bottom:6px; }
+.test-row { display:flex; gap:8px; font-size:11px; font-family:'IBM Plex Mono',monospace; margin-bottom:3px; }
+.test-row .lbl { color:var(--muted); min-width:70px; flex-shrink:0; }
+.test-row .val { color:var(--text); word-break:break-all; }
+.test-row .val.ok { color:var(--green); }
+.test-row .val.bad { color:var(--red); }
+
+/* Footer */
+footer {
+  background:var(--surface); border-top:1px solid var(--border);
+  padding:8px 12px; display:flex; gap:8px; flex-shrink:0;
+}
+.btn-run {
+  flex:1; background:var(--blue); color:#0d1117; border:none;
+  padding:10px; border-radius:8px; font-family:'Tajawal',sans-serif;
+  font-size:14px; font-weight:700; cursor:pointer; transition:all .2s;
+}
+.btn-run:disabled { background:var(--border); color:var(--muted); cursor:not-allowed; }
+.btn-submit {
+  flex:1; background:var(--green); color:#0d1117; border:none;
+  padding:10px; border-radius:8px; font-family:'Tajawal',sans-serif;
+  font-size:14px; font-weight:700; cursor:pointer; transition:all .2s;
+  display:none;
+}
+.btn-submit.show { display:block; }
+
+/* Pyodide overlay */
+#loadingOverlay {
+  position:fixed; inset:0; background:rgba(13,17,23,.96);
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:14px; z-index:999;
+}
+.spinner {
+  width:38px; height:38px; border:3px solid var(--border);
+  border-top-color:var(--blue); border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Toast */
+.toast {
+  position:fixed; bottom:80px; left:50%;
+  transform:translateX(-50%) translateY(16px);
+  background:#1c2128; border:1px solid var(--border);
+  color:var(--text); padding:8px 16px; border-radius:8px;
+  font-size:13px; opacity:0; pointer-events:none;
+  transition:all .25s; white-space:nowrap; z-index:200;
+}
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div style="color:var(--muted);font-size:13px;">جاري تحميل بيئة Python...</div>
+</div>
+
+<header>
+  <div class="h-left">
+    <span class="h-label">✍️ اكتب الحل</span>
+    <div class="h-title">
+      <span id="problemName">...</span>
+      <span class="badge">Python</span>
+    </div>
+  </div>
+  <button class="btn-clear" onclick="resetEditor()">مسح</button>
+</header>
+
+<div class="tabs">
+  <div class="tab active"  id="tab-editor"   onclick="switchTab('editor')">📝 الكود</div>
+  <div class="tab"         id="tab-tests"    onclick="switchTab('tests')">🧪 Test Cases</div>
+  <div class="tab"         id="tab-terminal" onclick="switchTab('terminal')">⚡ النتائج</div>
+</div>
+
+<!-- Editor -->
+<div class="panel active" id="editorPanel">
+  <textarea id="codeArea"></textarea>
+</div>
+
+<!-- Tests -->
+<div class="panel" id="testsPanel">
+  <div class="tests-list" id="testsList">
+    <div style="color:var(--muted);font-size:13px;padding:12px;">اضغط "تشغيل" لرؤية نتائج الـ test cases</div>
+  </div>
+</div>
+
+<!-- Terminal -->
+<div class="panel" id="terminalPanel">
+  <div class="terminal" id="terminal">
+    <div class="tl info">// اضغط "تشغيل" لاختبار الكود</div>
+  </div>
+</div>
+
+<footer>
+  <button class="btn-run"    id="runBtn"    onclick="runCode()">▶ تشغيل</button>
+  <button class="btn-submit" id="submitBtn" onclick="submitCode()">✅ إرسال للبوت</button>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+<script>
+// ══════════════════════════════
+// Telegram
+// ══════════════════════════════
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+// ══════════════════════════════
+// بيانات المسألة من URL
+// ══════════════════════════════
+const params = new URLSearchParams(window.location.search);
+const slug   = params.get('slug')  || '';
+const title  = params.get('title') || 'المسألة';
+document.getElementById('problemName').textContent = title;
+
+// ══════════════════════════════
+// Test Cases لكل مسألة
+// ══════════════════════════════
+const ALL_TESTS = {
+  'two-sum': {
+    func: 'twoSum',
+    cases: [
+      { inputs:[[2,7,11,15],9],  expected:[0,1],   label:'nums=[2,7,11,15], target=9' },
+      { inputs:[[3,2,4],6],      expected:[1,2],   label:'nums=[3,2,4], target=6' },
+      { inputs:[[3,3],6],        expected:[0,1],   label:'nums=[3,3], target=6' },
+    ],
+    compare: (r,e) => Array.isArray(r) && Array.isArray(e) && [...r].sort().join()==[...e].sort().join(),
+  },
+  'palindrome-number': {
+    func: 'isPalindrome',
+    cases: [
+      { inputs:[121],  expected:true,  label:'x=121' },
+      { inputs:[-121], expected:false, label:'x=-121' },
+      { inputs:[10],   expected:false, label:'x=10' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'roman-to-integer': {
+    func: 'romanToInt',
+    cases: [
+      { inputs:['III'],    expected:3,    label:'III' },
+      { inputs:['LVIII'],  expected:58,   label:'LVIII' },
+      { inputs:['MCMXCIV'],expected:1994, label:'MCMXCIV' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'longest-common-prefix': {
+    func: 'longestCommonPrefix',
+    cases: [
+      { inputs:[['flower','flow','flight']], expected:'fl', label:'flower,flow,flight' },
+      { inputs:[['dog','racecar','car']],    expected:'',   label:'dog,racecar,car' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'valid-parentheses': {
+    func: 'isValid',
+    cases: [
+      { inputs:['()'],     expected:true,  label:'()' },
+      { inputs:['()[]{}'], expected:true,  label:'()[]{}' },
+      { inputs:['(]'],     expected:false, label:'(]' },
+      { inputs:['([])'],   expected:true,  label:'([])' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'merge-two-sorted-lists': {
+    func: 'mergeTwoLists',
+    cases: [
+      { inputs:[[1,2,4],[1,3,4]], expected:[1,1,2,3,4,4], label:'[1,2,4] + [1,3,4]' },
+      { inputs:[[],[]],           expected:[],             label:'[] + []' },
+      { inputs:[[],[0]],          expected:[0],            label:'[] + [0]' },
+    ],
+    compare: (r,e) => JSON.stringify(r)===JSON.stringify(e),
+    special: 'linkedlist',
+  },
+  'maximum-subarray': {
+    func: 'maxSubArray',
+    cases: [
+      { inputs:[[-2,1,-3,4,-1,2,1,-5,4]], expected:6,  label:'[-2,1,-3,4,-1,2,1,-5,4]' },
+      { inputs:[[1]],                      expected:1,  label:'[1]' },
+      { inputs:[[5,4,-1,7,8]],             expected:23, label:'[5,4,-1,7,8]' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'climbing-stairs': {
+    func: 'climbStairs',
+    cases: [
+      { inputs:[2], expected:2, label:'n=2' },
+      { inputs:[3], expected:3, label:'n=3' },
+      { inputs:[5], expected:8, label:'n=5' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'best-time-to-buy-and-sell-stock': {
+    func: 'maxProfit',
+    cases: [
+      { inputs:[[7,1,5,3,6,4]], expected:5, label:'[7,1,5,3,6,4]' },
+      { inputs:[[7,6,4,3,1]],   expected:0, label:'[7,6,4,3,1]' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'remove-duplicates-from-sorted-array': {
+    func: 'removeDuplicates',
+    cases: [
+      { inputs:[[1,1,2]],              expected:2, label:'[1,1,2]' },
+      { inputs:[[0,0,1,1,1,2,2,3,3,4]],expected:5, label:'[0,0,1,1,1,2,2,3,3,4]' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'coin-change': {
+    func: 'coinChange',
+    cases: [
+      { inputs:[[1,5,11],11], expected:1,  label:'coins=[1,5,11], amount=11' },
+      { inputs:[[2],3],       expected:-1, label:'coins=[2], amount=3' },
+      { inputs:[[1],0],       expected:0,  label:'coins=[1], amount=0' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'longest-substring-without-repeating-characters': {
+    func: 'lengthOfLongestSubstring',
+    cases: [
+      { inputs:['abcabcbb'], expected:3, label:'abcabcbb' },
+      { inputs:['bbbbb'],    expected:1, label:'bbbbb' },
+      { inputs:['pwwkew'],   expected:3, label:'pwwkew' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'container-with-most-water': {
+    func: 'maxArea',
+    cases: [
+      { inputs:[[1,8,6,2,5,4,8,3,7]], expected:49, label:'[1,8,6,2,5,4,8,3,7]' },
+      { inputs:[[1,1]],               expected:1,  label:'[1,1]' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  '3sum': {
+    func: 'threeSum',
+    cases: [
+      { inputs:[[-1,0,1,2,-1,-4]], expected:[[-1,-1,2],[-1,0,1]], label:'[-1,0,1,2,-1,-4]' },
+      { inputs:[[0,1,1]],          expected:[],                    label:'[0,1,1]' },
+      { inputs:[[0,0,0]],          expected:[[0,0,0]],             label:'[0,0,0]' },
+    ],
+    compare: (r,e) => {
+      if (!Array.isArray(r)) return false;
+      const norm = a => a.map(x=>[...x].sort((a,b)=>a-b)).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+      return JSON.stringify(norm(r)) === JSON.stringify(norm(e));
+    },
+  },
+  'search-in-rotated-sorted-array': {
+    func: 'search',
+    cases: [
+      { inputs:[[4,5,6,7,0,1,2],0], expected:4, label:'[4,5,6,7,0,1,2], target=0' },
+      { inputs:[[4,5,6,7,0,1,2],3], expected:-1,label:'[4,5,6,7,0,1,2], target=3' },
+      { inputs:[[1],0],             expected:-1,label:'[1], target=0' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'number-of-islands': {
+    func: 'numIslands',
+    cases: [
+      { inputs:[[['1','1','1','1','0'],['1','1','0','1','0'],['1','1','0','0','0'],['0','0','0','0','0']]], expected:1, label:'grid 1 island' },
+      { inputs:[[['1','1','0','0','0'],['1','1','0','0','0'],['0','0','1','0','0'],['0','0','0','1','1']]], expected:3, label:'grid 3 islands' },
+    ],
+    compare: (r,e) => r === e,
+  },
+  'merge-intervals': {
+    func: 'merge',
+    cases: [
+      { inputs:[[[1,3],[2,6],[8,10],[15,18]]], expected:[[1,6],[8,10],[15,18]], label:'[[1,3],[2,6],[8,10],[15,18]]' },
+      { inputs:[[[1,4],[4,5]]],               expected:[[1,5]],                label:'[[1,4],[4,5]]' },
+    ],
+    compare: (r,e) => JSON.stringify(r)===JSON.stringify(e),
+  },
+  'permutations': {
+    func: 'permute',
+    cases: [
+      { inputs:[[1,2,3]], expected:[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]], label:'[1,2,3]' },
+      { inputs:[[0,1]],   expected:[[0,1],[1,0]],                                      label:'[0,1]' },
+    ],
+    compare: (r,e) => {
+      if (!Array.isArray(r)) return false;
+      const s = a => a.map(x=>[...x].sort().join(',')).sort().join('|');
+      return s(r) === s(e);
+    },
+  },
+};
+
+const problemData = ALL_TESTS[slug] || { func: 'solution', cases: [], compare: (r,e) => r===e };
+const testCases   = problemData.cases;
+
+// ══════════════════════════════
+// Signatures
+// ══════════════════════════════
+const SIGNATURES = {
+  'two-sum':                                        'def twoSum(self, nums: list[int], target: int) -> list[int]:',
+  'palindrome-number':                              'def isPalindrome(self, x: int) -> bool:',
+  'roman-to-integer':                               'def romanToInt(self, s: str) -> int:',
+  'longest-common-prefix':                          'def longestCommonPrefix(self, strs: list[str]) -> str:',
+  'valid-parentheses':                              'def isValid(self, s: str) -> bool:',
+  'merge-two-sorted-lists':                         'def mergeTwoLists(self, l1, l2):',
+  'remove-duplicates-from-sorted-array':            'def removeDuplicates(self, nums: list[int]) -> int:',
+  'maximum-subarray':                               'def maxSubArray(self, nums: list[int]) -> int:',
+  'climbing-stairs':                                'def climbStairs(self, n: int) -> int:',
+  'best-time-to-buy-and-sell-stock':                'def maxProfit(self, prices: list[int]) -> int:',
+  'longest-substring-without-repeating-characters':'def lengthOfLongestSubstring(self, s: str) -> int:',
+  'container-with-most-water':                      'def maxArea(self, height: list[int]) -> int:',
+  '3sum':                                           'def threeSum(self, nums: list[int]) -> list[list[int]]:',
+  'search-in-rotated-sorted-array':                 'def search(self, nums: list[int], target: int) -> int:',
+  'permutations':                                   'def permute(self, nums: list[int]) -> list[list[int]]:',
+  'merge-intervals':                                'def merge(self, intervals: list[list[int]]) -> list[list[int]]:',
+  'number-of-islands':                              'def numIslands(self, grid: list[list[str]]) -> int:',
+  'coin-change':                                    'def coinChange(self, coins: list[int], amount: int) -> int:',
+};
+
+const sig      = SIGNATURES[slug] || `def solution(self):`;
+const template = `class Solution:\n    ${sig}\n        # اكتب حلك هنا\n        pass\n`;
+
+// ══════════════════════════════
+// CodeMirror
+// ══════════════════════════════
+const editor = CodeMirror.fromTextArea(document.getElementById('codeArea'), {
+  mode:'python', theme:'dracula', lineNumbers:true,
+  autoCloseBrackets:true, matchBrackets:true, styleActiveLine:true,
+  indentUnit:4, tabSize:4, indentWithTabs:false,
+  extraKeys:{ Tab:cm=>cm.execCommand('indentMore'), 'Shift-Tab':cm=>cm.execCommand('indentLess') },
+});
+editor.setValue(template);
+editor.setCursor({line:3, ch:8});
+
+// ══════════════════════════════
+// Tabs
+// ══════════════════════════════
+function switchTab(name) {
+  ['editor','tests','terminal'].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.toggle('active', t===name);
+    document.getElementById(`${t}Panel`).classList.toggle('active', t===name);
+  });
+  if (name==='editor') editor.refresh();
+}
+
+// ══════════════════════════════
+// Terminal helpers
+// ══════════════════════════════
+function tLog(txt, cls='out') {
+  const d = document.createElement('div');
+  d.className = `tl ${cls}`;
+  d.textContent = txt;
+  document.getElementById('terminal').appendChild(d);
+  document.getElementById('terminal').scrollTop = 99999;
+}
+function tClear() { document.getElementById('terminal').innerHTML = ''; }
+
+// ══════════════════════════════
+// Pyodide
+// ══════════════════════════════
+let pyodide = null;
+(async () => {
+  try {
+    pyodide = await loadPyodide({ indexURL:'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/' });
+    document.getElementById('loadingOverlay').style.display = 'none';
+    tLog('✅ بيئة Python جاهزة', 'pass');
+    tLog(`📋 عدد الـ test cases: ${testCases.length}`, 'info');
+    tLog('─────────────────────────────', 'sep');
+  } catch(e) {
+    document.getElementById('loadingOverlay').innerHTML =
+      `<div style="color:var(--red);padding:20px;text-align:center">❌ فشل تحميل Python<br><small>${e.message}</small></div>`;
+  }
+})();
+
+// ══════════════════════════════
+// تشغيل الكود
+// ══════════════════════════════
+let lastResults = [];
+
+async function runCode() {
+  if (!pyodide) { showToast('⏳ Python لسا بتحمّل...'); return; }
+  if (testCases.length === 0) { showToast('⚠️ لا توجد test cases لهذه المسألة'); return; }
+
+  const code   = editor.getValue();
+  const runBtn = document.getElementById('runBtn');
+  runBtn.disabled = true;
+  runBtn.textContent = '⏳ جاري التشغيل...';
+  document.getElementById('submitBtn').classList.remove('show');
+
+  switchTab('terminal');
+  tClear();
+  tLog(`▶ تشغيل: ${title}`, 'info');
+  tLog(`📋 ${testCases.length} test cases`, 'info');
+  tLog('─────────────────────────────', 'sep');
+
+  lastResults = [];
+  let allPassed = true;
+  const funcName = problemData.func;
+
+  for (let i = 0; i < testCases.length; i++) {
+    const tc = testCases[i];
+    tLog(`\nTest ${i+1}: ${tc.label}`, 'info');
+
+    try {
+      const argsJson = JSON.stringify(tc.inputs);
+      const pyCode = `
+import json, copy
+${code}
+
+sol = Solution()
+args = json.loads('''${argsJson.replace(/'/g,"\\'")}''')
+try:
+    result = sol.${funcName}(*copy.deepcopy(args))
+    print(json.dumps({"ok": True, "result": result}))
+except Exception as e:
+    print(json.dumps({"ok": False, "error": str(e)}))
+`;
+      const output = await pyodide.runPythonAsync(pyCode);
+      const data   = JSON.parse(output);
+
+      if (!data.ok) {
+        tLog(`  ❌ خطأ في الكود: ${data.error}`, 'err');
+        lastResults.push({ passed:false, label:tc.label, error:data.error, inputs:tc.inputs, expected:tc.expected });
+        allPassed = false;
+        continue;
+      }
+
+      const passed = problemData.compare(data.result, tc.expected);
+      lastResults.push({ passed, label:tc.label, result:data.result, expected:tc.expected, inputs:tc.inputs });
+
+      if (passed) {
+        tLog(`  ✅ صحيح`, 'pass');
+      } else {
+        tLog(`  ❌ خطأ`, 'fail');
+        allPassed = false;
+      }
+      tLog(`  Input:    ${JSON.stringify(tc.inputs)}`, 'out');
+      tLog(`  Output:   ${JSON.stringify(data.result)}`, 'out');
+      tLog(`  Expected: ${JSON.stringify(tc.expected)}`, passed ? 'pass' : 'fail');
+
+    } catch(e) {
+      tLog(`  ❌ ${e.message}`, 'err');
+      lastResults.push({ passed:false, label:tc.label, error:e.message, inputs:tc.inputs, expected:tc.expected });
+      allPassed = false;
+    }
+  }
+
+  tLog('\n─────────────────────────────', 'sep');
+  if (allPassed) {
+    tLog('🎉 جميع الـ test cases صحيحة! اضغط "إرسال للبوت"', 'pass');
+    document.getElementById('submitBtn').classList.add('show');
+  } else {
+    const failed = lastResults.filter(r=>!r.passed).length;
+    tLog(`❌ ${failed} من ${testCases.length} test cases غلط`, 'fail');
+  }
+
+  // تحديث بطاقات الـ tests
+  renderTestCards();
+
+  runBtn.disabled = false;
+  runBtn.textContent = '▶ تشغيل';
+}
+
+// ══════════════════════════════
+// عرض نتائج الـ Tests
+// ══════════════════════════════
+function renderTestCards() {
+  const list = document.getElementById('testsList');
+  list.innerHTML = '';
+
+  if (lastResults.length === 0) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px;">اضغط "تشغيل" أولاً</div>';
+    return;
+  }
+
+  lastResults.forEach((r, i) => {
+    const card = document.createElement('div');
+    card.className = `test-card ${r.passed ? 'pass' : 'fail'}`;
+    card.innerHTML = `
+      <div class="test-title">${r.passed ? '✅' : '❌'} Test ${i+1}: ${r.label}</div>
+      <div class="test-row"><span class="lbl">Input:</span><span class="val">${JSON.stringify(r.inputs)}</span></div>
+      ${r.error
+        ? `<div class="test-row"><span class="lbl">Error:</span><span class="val bad">${r.error}</span></div>`
+        : `<div class="test-row"><span class="lbl">Output:</span><span class="val ${r.passed?'ok':'bad'}">${JSON.stringify(r.result)}</span></div>
+           <div class="test-row"><span class="lbl">Expected:</span><span class="val ok">${JSON.stringify(r.expected)}</span></div>`
+      }
+    `;
+    list.appendChild(card);
+  });
+
+  switchTab('tests');
+}
+
+// ══════════════════════════════
+// إرسال للبوت
+// ══════════════════════════════
+const BOT_TOKEN = "8705856236:AAHvKas1uWFoRTSTEHPuin_3EVt0Uygtrik";
+
+async function submitCode() {
+  const code    = editor.getValue().trim();
+  const btn     = document.getElementById('submitBtn');
+  const payload = JSON.stringify({ code, slug, title, passed: true });
+
+  btn.disabled = true;
+  btn.textContent = '⏳ جاري الإرسال...';
+
+  // محاولة sendData
+  try {
+    tg.sendData(payload);
+    return;
+  } catch(e) {}
+
+  // fallback: Bot API
+  const chatId = tg.initDataUnsafe?.user?.id;
+  if (!chatId) {
+    showToast('❌ تعذّر الإرسال');
+    btn.disabled = false;
+    btn.textContent = '✅ إرسال للبوت';
+    return;
+  }
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ chat_id: chatId, text: `__WEBAPP_CODE__\n${code}` })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      tg.close();
+    } else {
+      showToast('❌ خطأ: ' + (data.description || 'unknown'));
+      btn.disabled = false;
+      btn.textContent = '✅ إرسال للبوت';
+    }
+  } catch(e) {
+    showToast('❌ خطأ في الاتصال');
+    btn.disabled = false;
+    btn.textContent = '✅ إرسال للبوت';
+  }
+}
+
+// ══════════════════════════════
+// مسح
+// ══════════════════════════════
+function resetEditor() {
+  editor.setValue(template);
+  editor.setCursor({line:3, ch:8});
+  editor.focus();
+  switchTab('editor');
+  document.getElementById('submitBtn').classList.remove('show');
+  lastResults = [];
+}
+
+// ══════════════════════════════
+// Toast
+// ══════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>
