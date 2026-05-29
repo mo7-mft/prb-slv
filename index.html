@@ -120,13 +120,6 @@ footer {
   font-size:14px; font-weight:700; cursor:pointer; transition:all .2s;
 }
 .btn-run:disabled { background:var(--border); color:var(--muted); cursor:not-allowed; }
-.btn-submit {
-  flex:1; background:var(--green); color:#0d1117; border:none;
-  padding:10px; border-radius:8px; font-family:'Tajawal',sans-serif;
-  font-size:14px; font-weight:700; cursor:pointer; transition:all .2s;
-  display:none;
-}
-.btn-submit.show { display:block; }
 
 /* Pyodide overlay */
 #loadingOverlay {
@@ -503,7 +496,6 @@ async function runCode() {
 
     try {
       const argsJson = JSON.stringify(tc.inputs);
-      // نمرر الـ args عبر globals بدل JSON string
       pyodide.globals.set('_args_json', argsJson);
       const pyCode = `
 import json, copy
@@ -549,6 +541,7 @@ except Exception as e:
   }
 
   tLog('\n─────────────────────────────', 'sep');
+
   if (allPassed) {
     tLog('🎉 جميع الـ test cases صحيحة!', 'pass');
     tLog('⏳ إضافة النقاط خلال 5 ثواني...', 'info');
@@ -560,13 +553,13 @@ except Exception as e:
         tLog(`${sec}...`, 'warn');
       } else {
         clearInterval(interval);
-        const code   = editor.getValue().trim();
-        const chatId = tg.initDataUnsafe?.user?.id;
+        const userCode = editor.getValue().trim();
+        const chatId   = tg.initDataUnsafe?.user?.id;
 
         // نحاول sendData أولاً
         let sent = false;
         try {
-          tg.sendData(JSON.stringify({ code, slug, title, passed: true }));
+          tg.sendData(JSON.stringify({ code: userCode, slug, title, passed: true }));
           sent = true;
         } catch(e) {}
 
@@ -576,14 +569,11 @@ except Exception as e:
             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ chat_id: chatId, text: `__WEBAPP_CODE__\n${code}` })
+              body: JSON.stringify({ chat_id: chatId, text: `__WEBAPP_CODE__\n${userCode}` })
             });
           } catch(e) {}
         }
 
-        tg.close();
-      }
-    }, 1000);
         tg.close();
       }
     }, 1000);
