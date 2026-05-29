@@ -504,17 +504,21 @@ async function runCode() {
 
     try {
       const argsJson = JSON.stringify(tc.inputs);
+      // نمرر الـ args عبر globals بدل JSON string
+      pyodide.globals.set('_args_json', argsJson);
       const pyCode = `
 import json, copy
 ${code}
 
 sol = Solution()
-args = json.loads('''${argsJson.replace(/'/g,"\\'")}''')
+args = json.loads(_args_json)
 try:
     result = sol.${funcName}(*copy.deepcopy(args))
-    print(json.dumps({"ok": True, "result": result}))
+    import json as _j
+    print(_j.dumps({"ok": True, "result": result}))
 except Exception as e:
-    print(json.dumps({"ok": False, "error": str(e)}))
+    import traceback
+    print(_j.dumps({"ok": False, "error": str(e)}))
 `;
       const output = await pyodide.runPythonAsync(pyCode);
       const data   = JSON.parse(output);
