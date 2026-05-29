@@ -514,13 +514,12 @@ sol = Solution()
 args = json.loads(_args_json)
 try:
     result = sol.${funcName}(*copy.deepcopy(args))
-    import json as _j
-    print(_j.dumps({"ok": True, "result": result}))
+    _result = json.dumps({"ok": True, "result": result})
 except Exception as e:
-    import traceback
-    print(_j.dumps({"ok": False, "error": str(e)}))
+    _result = json.dumps({"ok": False, "error": str(e)})
 `;
-      const output = await pyodide.runPythonAsync(pyCode);
+      await pyodide.runPythonAsync(pyCode);
+      const output = pyodide.globals.get('_result');
       const data   = JSON.parse(output);
 
       if (!data.ok) {
