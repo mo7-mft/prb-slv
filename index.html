@@ -53,9 +53,10 @@ header {
 .tabs {
   display:flex; background:var(--surface);
   border-bottom:1px solid var(--border); flex-shrink:0;
+  overflow-x:auto;
 }
 .tab {
-  padding:7px 14px; font-size:12px; cursor:pointer;
+  padding:7px 12px; font-size:12px; cursor:pointer; white-space:nowrap;
   color:var(--muted); border-bottom:2px solid transparent; transition:all .2s;
 }
 .tab.active { color:var(--blue); border-bottom-color:var(--blue); }
@@ -96,6 +97,31 @@ header {
 .test-row .val { color:var(--text); word-break:break-all; }
 .test-row .val.ok { color:var(--green); }
 .test-row .val.bad { color:var(--red); }
+
+/* ── History Tab ── */
+.history-list { flex:1; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:8px; }
+.hist-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; padding:10px 12px; cursor:pointer; transition:border-color .2s;
+}
+.hist-card:hover { border-color:var(--blue); }
+.hist-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.hist-title { font-size:13px; font-weight:700; }
+.hist-meta { font-size:11px; color:var(--muted); display:flex; gap:8px; margin-bottom:4px; }
+.hist-pts { color:var(--yellow); font-family:'IBM Plex Mono',monospace; font-size:11px; }
+.hist-code-wrap { display:none; margin-top:8px; border-top:1px solid var(--border); padding-top:8px; }
+.hist-code-wrap.open { display:block; }
+.hist-code {
+  font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.6;
+  color:var(--text); white-space:pre-wrap; word-break:break-all;
+  max-height:200px; overflow-y:auto;
+}
+.hist-empty { color:var(--muted); font-size:13px; padding:20px; text-align:center; }
+.level-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-left:4px; }
+.level-dot.easy   { background:var(--green); }
+.level-dot.medium { background:var(--yellow); }
+.level-dot.hard   { background:var(--red); }
+
 footer {
   background:var(--surface); border-top:1px solid var(--border);
   padding:8px 12px; display:flex; gap:8px; flex-shrink:0;
@@ -133,19 +159,6 @@ footer {
   transition:all .25s; white-space:nowrap; z-index:200;
 }
 .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
-
-/* ✅ بانر تحذير Solution */
-.warn-banner {
-  background: rgba(248,81,73,0.12);
-  border: 1px solid var(--red);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin: 10px;
-  font-size: 12px;
-  color: var(--red);
-  display: none;
-}
-.warn-banner.show { display: block; }
 </style>
 </head>
 <body>
@@ -168,8 +181,9 @@ footer {
 
 <div class="tabs">
   <div class="tab active"  id="tab-editor"   onclick="switchTab('editor')">📝 الكود</div>
-  <div class="tab"         id="tab-tests"    onclick="switchTab('tests')">🧪 Test Cases</div>
+  <div class="tab"         id="tab-tests"    onclick="switchTab('tests')">🧪 Tests</div>
   <div class="tab"         id="tab-terminal" onclick="switchTab('terminal')">⚡ النتائج</div>
+  <div class="tab"         id="tab-history"  onclick="switchTab('history')">📋 السجل</div>
 </div>
 
 <!-- Editor -->
@@ -191,6 +205,13 @@ footer {
   </div>
 </div>
 
+<!-- History -->
+<div class="panel" id="historyPanel">
+  <div class="history-list" id="historyList">
+    <div class="hist-empty">⏳ جاري التحميل...</div>
+  </div>
+</div>
+
 <footer>
   <button class="btn-run" id="runBtn" onclick="runCode()">▶ تشغيل</button>
   <button class="btn-copy" id="copyBtn" onclick="copyCode()">📋 انسخ كودك وضعه في شات البوت</button>
@@ -204,182 +225,193 @@ const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
-const params = new URLSearchParams(window.location.search);
-const slug   = params.get('slug')  || '';
-const title  = params.get('title') || 'المسألة';
+const params      = new URLSearchParams(window.location.search);
+const slug        = params.get('slug')  || '';
+const title       = params.get('title') || 'المسألة';
+const historyRaw  = params.get('history') || '';   // JSON array من البوت
+
 document.getElementById('problemName').textContent = title;
 
+// ── parse history ──────────────────────────────────────────────
+let historyData = [];
+try {
+  if (historyRaw) historyData = JSON.parse(decodeURIComponent(historyRaw));
+} catch(e) { historyData = []; }
+
+// ── ALL_TESTS ──────────────────────────────────────────────────
 const ALL_TESTS = {
   'two-sum': {
-    func: 'twoSum',
-    cases: [
-      { inputs:[[2,7,11,15],9],  expected:[0,1],   label:'nums=[2,7,11,15], target=9' },
-      { inputs:[[3,2,4],6],      expected:[1,2],   label:'nums=[3,2,4], target=6' },
-      { inputs:[[3,3],6],        expected:[0,1],   label:'nums=[3,3], target=6' },
+    func:'twoSum',
+    cases:[
+      {inputs:[[2,7,11,15],9],  expected:[0,1],   label:'nums=[2,7,11,15], target=9'},
+      {inputs:[[3,2,4],6],      expected:[1,2],   label:'nums=[3,2,4], target=6'},
+      {inputs:[[3,3],6],        expected:[0,1],   label:'nums=[3,3], target=6'},
     ],
-    compare: (r,e) => Array.isArray(r) && Array.isArray(e) && [...r].sort().join()==[...e].sort().join(),
+    compare:(r,e)=>Array.isArray(r)&&[...r].sort().join()===[...e].sort().join(),
   },
-  'palindrome-number': {
-    func: 'isPalindrome',
-    cases: [
-      { inputs:[121],  expected:true,  label:'x=121' },
-      { inputs:[-121], expected:false, label:'x=-121' },
-      { inputs:[10],   expected:false, label:'x=10' },
+  'palindrome-number':{
+    func:'isPalindrome',
+    cases:[
+      {inputs:[121],  expected:true,  label:'x=121'},
+      {inputs:[-121], expected:false, label:'x=-121'},
+      {inputs:[10],   expected:false, label:'x=10'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'roman-to-integer': {
-    func: 'romanToInt',
-    cases: [
-      { inputs:['III'],    expected:3,    label:'III' },
-      { inputs:['LVIII'],  expected:58,   label:'LVIII' },
-      { inputs:['MCMXCIV'],expected:1994, label:'MCMXCIV' },
+  'roman-to-integer':{
+    func:'romanToInt',
+    cases:[
+      {inputs:['III'],     expected:3,    label:'III'},
+      {inputs:['LVIII'],   expected:58,   label:'LVIII'},
+      {inputs:['MCMXCIV'], expected:1994, label:'MCMXCIV'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'longest-common-prefix': {
-    func: 'longestCommonPrefix',
-    cases: [
-      { inputs:[['flower','flow','flight']], expected:'fl', label:'flower,flow,flight' },
-      { inputs:[['dog','racecar','car']],    expected:'',   label:'dog,racecar,car' },
+  'longest-common-prefix':{
+    func:'longestCommonPrefix',
+    cases:[
+      {inputs:[['flower','flow','flight']], expected:'fl', label:'flower,flow,flight'},
+      {inputs:[['dog','racecar','car']],    expected:'',   label:'dog,racecar,car'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'valid-parentheses': {
-    func: 'isValid',
-    cases: [
-      { inputs:['()'],     expected:true,  label:'()' },
-      { inputs:['()[]{}'], expected:true,  label:'()[]{}' },
-      { inputs:['(]'],     expected:false, label:'(]' },
-      { inputs:['([])'],   expected:true,  label:'([])' },
+  'valid-parentheses':{
+    func:'isValid',
+    cases:[
+      {inputs:['()'],     expected:true,  label:'()'},
+      {inputs:['()[]{}'], expected:true,  label:'()[]{}'},
+      {inputs:['(]'],     expected:false, label:'(]'},
+      {inputs:['([])'],   expected:true,  label:'([])'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'merge-two-sorted-lists': {
-    func: 'mergeTwoLists',
-    cases: [
-      { inputs:[[1,2,4],[1,3,4]], expected:[1,1,2,3,4,4], label:'[1,2,4] + [1,3,4]' },
-      { inputs:[[],[]],           expected:[],             label:'[] + []' },
-      { inputs:[[],[0]],          expected:[0],            label:'[] + [0]' },
+  'merge-two-sorted-lists':{
+    func:'mergeTwoLists',
+    cases:[
+      {inputs:[[1,2,4],[1,3,4]], expected:[1,1,2,3,4,4], label:'[1,2,4]+[1,3,4]'},
+      {inputs:[[],[]],           expected:[],             label:'[]+[]'},
+      {inputs:[[],[0]],          expected:[0],            label:'[]+[0]'},
     ],
-    compare: (r,e) => JSON.stringify(r)===JSON.stringify(e),
-    special: 'linkedlist',
+    compare:(r,e)=>JSON.stringify(r)===JSON.stringify(e),
+    special:'linkedlist',
   },
-  'maximum-subarray': {
-    func: 'maxSubArray',
-    cases: [
-      { inputs:[[-2,1,-3,4,-1,2,1,-5,4]], expected:6,  label:'[-2,1,-3,4,-1,2,1,-5,4]' },
-      { inputs:[[1]],                      expected:1,  label:'[1]' },
-      { inputs:[[5,4,-1,7,8]],             expected:23, label:'[5,4,-1,7,8]' },
+  'maximum-subarray':{
+    func:'maxSubArray',
+    cases:[
+      {inputs:[[-2,1,-3,4,-1,2,1,-5,4]], expected:6,  label:'[-2,1,-3,4,-1,2,1,-5,4]'},
+      {inputs:[[1]],                      expected:1,  label:'[1]'},
+      {inputs:[[5,4,-1,7,8]],             expected:23, label:'[5,4,-1,7,8]'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'climbing-stairs': {
-    func: 'climbStairs',
-    cases: [
-      { inputs:[2], expected:2, label:'n=2' },
-      { inputs:[3], expected:3, label:'n=3' },
-      { inputs:[5], expected:8, label:'n=5' },
+  'climbing-stairs':{
+    func:'climbStairs',
+    cases:[
+      {inputs:[2], expected:2, label:'n=2'},
+      {inputs:[3], expected:3, label:'n=3'},
+      {inputs:[5], expected:8, label:'n=5'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'best-time-to-buy-and-sell-stock': {
-    func: 'maxProfit',
-    cases: [
-      { inputs:[[7,1,5,3,6,4]], expected:5, label:'[7,1,5,3,6,4]' },
-      { inputs:[[7,6,4,3,1]],   expected:0, label:'[7,6,4,3,1]' },
+  'best-time-to-buy-and-sell-stock':{
+    func:'maxProfit',
+    cases:[
+      {inputs:[[7,1,5,3,6,4]], expected:5, label:'[7,1,5,3,6,4]'},
+      {inputs:[[7,6,4,3,1]],   expected:0, label:'[7,6,4,3,1]'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'remove-duplicates-from-sorted-array': {
-    func: 'removeDuplicates',
-    cases: [
-      { inputs:[[1,1,2]],              expected:2, label:'[1,1,2]' },
-      { inputs:[[0,0,1,1,1,2,2,3,3,4]],expected:5, label:'[0,0,1,1,1,2,2,3,3,4]' },
+  'remove-duplicates-from-sorted-array':{
+    func:'removeDuplicates',
+    cases:[
+      {inputs:[[1,1,2]],               expected:2, label:'[1,1,2]'},
+      {inputs:[[0,0,1,1,1,2,2,3,3,4]], expected:5, label:'[0,0,1,1,1,2,2,3,3,4]'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'coin-change': {
-    func: 'coinChange',
-    cases: [
-      { inputs:[[1,5,11],11], expected:1,  label:'coins=[1,5,11], amount=11' },
-      { inputs:[[2],3],       expected:-1, label:'coins=[2], amount=3' },
-      { inputs:[[1],0],       expected:0,  label:'coins=[1], amount=0' },
+  'coin-change':{
+    func:'coinChange',
+    cases:[
+      {inputs:[[1,5,11],11], expected:1,  label:'coins=[1,5,11], amount=11'},
+      {inputs:[[2],3],       expected:-1, label:'coins=[2], amount=3'},
+      {inputs:[[1],0],       expected:0,  label:'coins=[1], amount=0'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'longest-substring-without-repeating-characters': {
-    func: 'lengthOfLongestSubstring',
-    cases: [
-      { inputs:['abcabcbb'], expected:3, label:'abcabcbb' },
-      { inputs:['bbbbb'],    expected:1, label:'bbbbb' },
-      { inputs:['pwwkew'],   expected:3, label:'pwwkew' },
+  'longest-substring-without-repeating-characters':{
+    func:'lengthOfLongestSubstring',
+    cases:[
+      {inputs:['abcabcbb'], expected:3, label:'abcabcbb'},
+      {inputs:['bbbbb'],    expected:1, label:'bbbbb'},
+      {inputs:['pwwkew'],   expected:3, label:'pwwkew'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'container-with-most-water': {
-    func: 'maxArea',
-    cases: [
-      { inputs:[[1,8,6,2,5,4,8,3,7]], expected:49, label:'[1,8,6,2,5,4,8,3,7]' },
-      { inputs:[[1,1]],               expected:1,  label:'[1,1]' },
+  'container-with-most-water':{
+    func:'maxArea',
+    cases:[
+      {inputs:[[1,8,6,2,5,4,8,3,7]], expected:49, label:'[1,8,6,2,5,4,8,3,7]'},
+      {inputs:[[1,1]],               expected:1,  label:'[1,1]'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  '3sum': {
-    func: 'threeSum',
-    cases: [
-      { inputs:[[-1,0,1,2,-1,-4]], expected:[[-1,-1,2],[-1,0,1]], label:'[-1,0,1,2,-1,-4]' },
-      { inputs:[[0,1,1]],          expected:[],                    label:'[0,1,1]' },
-      { inputs:[[0,0,0]],          expected:[[0,0,0]],             label:'[0,0,0]' },
+  '3sum':{
+    func:'threeSum',
+    cases:[
+      {inputs:[[-1,0,1,2,-1,-4]], expected:[[-1,-1,2],[-1,0,1]], label:'[-1,0,1,2,-1,-4]'},
+      {inputs:[[0,1,1]],          expected:[],                    label:'[0,1,1]'},
+      {inputs:[[0,0,0]],          expected:[[0,0,0]],             label:'[0,0,0]'},
     ],
-    compare: (r,e) => {
-      if (!Array.isArray(r)) return false;
-      const norm = a => a.map(x=>[...x].sort((a,b)=>a-b)).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
-      return JSON.stringify(norm(r)) === JSON.stringify(norm(e));
+    compare:(r,e)=>{
+      if(!Array.isArray(r)) return false;
+      const norm=a=>a.map(x=>[...x].sort((a,b)=>a-b)).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+      return JSON.stringify(norm(r))===JSON.stringify(norm(e));
     },
   },
-  'search-in-rotated-sorted-array': {
-    func: 'search',
-    cases: [
-      { inputs:[[4,5,6,7,0,1,2],0], expected:4, label:'[4,5,6,7,0,1,2], target=0' },
-      { inputs:[[4,5,6,7,0,1,2],3], expected:-1,label:'[4,5,6,7,0,1,2], target=3' },
-      { inputs:[[1],0],             expected:-1,label:'[1], target=0' },
+  'search-in-rotated-sorted-array':{
+    func:'search',
+    cases:[
+      {inputs:[[4,5,6,7,0,1,2],0], expected:4,  label:'[4,5,6,7,0,1,2], target=0'},
+      {inputs:[[4,5,6,7,0,1,2],3], expected:-1, label:'[4,5,6,7,0,1,2], target=3'},
+      {inputs:[[1],0],             expected:-1, label:'[1], target=0'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'number-of-islands': {
-    func: 'numIslands',
-    cases: [
-      { inputs:[[['1','1','1','1','0'],['1','1','0','1','0'],['1','1','0','0','0'],['0','0','0','0','0']]], expected:1, label:'grid 1 island' },
-      { inputs:[[['1','1','0','0','0'],['1','1','0','0','0'],['0','0','1','0','0'],['0','0','0','1','1']]], expected:3, label:'grid 3 islands' },
+  'number-of-islands':{
+    func:'numIslands',
+    cases:[
+      {inputs:[[['1','1','1','1','0'],['1','1','0','1','0'],['1','1','0','0','0'],['0','0','0','0','0']]], expected:1, label:'grid 1 island'},
+      {inputs:[[['1','1','0','0','0'],['1','1','0','0','0'],['0','0','1','0','0'],['0','0','0','1','1']]], expected:3, label:'grid 3 islands'},
     ],
-    compare: (r,e) => r === e,
+    compare:(r,e)=>r===e,
   },
-  'merge-intervals': {
-    func: 'merge',
-    cases: [
-      { inputs:[[[1,3],[2,6],[8,10],[15,18]]], expected:[[1,6],[8,10],[15,18]], label:'[[1,3],[2,6],[8,10],[15,18]]' },
-      { inputs:[[[1,4],[4,5]]],               expected:[[1,5]],                label:'[[1,4],[4,5]]' },
+  'merge-intervals':{
+    func:'merge',
+    cases:[
+      {inputs:[[[1,3],[2,6],[8,10],[15,18]]], expected:[[1,6],[8,10],[15,18]], label:'[[1,3],[2,6],[8,10],[15,18]]'},
+      {inputs:[[[1,4],[4,5]]],               expected:[[1,5]],                label:'[[1,4],[4,5]]'},
     ],
-    compare: (r,e) => JSON.stringify(r)===JSON.stringify(e),
+    compare:(r,e)=>JSON.stringify(r)===JSON.stringify(e),
   },
-  'permutations': {
-    func: 'permute',
-    cases: [
-      { inputs:[[1,2,3]], expected:[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]], label:'[1,2,3]' },
-      { inputs:[[0,1]],   expected:[[0,1],[1,0]],                                      label:'[0,1]' },
+  'permutations':{
+    func:'permute',
+    cases:[
+      {inputs:[[1,2,3]], expected:[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]], label:'[1,2,3]'},
+      {inputs:[[0,1]],   expected:[[0,1],[1,0]],                                      label:'[0,1]'},
     ],
-    compare: (r,e) => {
-      if (!Array.isArray(r)) return false;
-      const s = a => a.map(x=>[...x].sort().join(',')).sort().join('|');
-      return s(r) === s(e);
+    compare:(r,e)=>{
+      if(!Array.isArray(r)) return false;
+      const s=a=>a.map(x=>[...x].sort().join(',')).sort().join('|');
+      return s(r)===s(e);
     },
   },
 };
 
-const problemData = ALL_TESTS[slug] || { func: 'solution', cases: [], compare: (r,e) => r===e };
-const testCases   = problemData.cases;
+const problemData = ALL_TESTS[slug] || null;
+const testCases   = problemData ? problemData.cases : [];
+const hasTests    = testCases.length > 0;
 
+// ── SIGNATURES ────────────────────────────────────────────────
 const SIGNATURES = {
   'two-sum':                                        'def twoSum(self, nums: list[int], target: int) -> list[int]:',
   'palindrome-number':                              'def isPalindrome(self, x: int) -> bool:',
@@ -413,14 +445,17 @@ const editor = CodeMirror.fromTextArea(document.getElementById('codeArea'), {
 editor.setValue(template);
 editor.setCursor({line:3, ch:8});
 
+// ── Tabs ──────────────────────────────────────────────────────
 function switchTab(name) {
-  ['editor','tests','terminal'].forEach(t => {
+  ['editor','tests','terminal','history'].forEach(t => {
     document.getElementById(`tab-${t}`).classList.toggle('active', t===name);
     document.getElementById(`${t}Panel`).classList.toggle('active', t===name);
   });
-  if (name==='editor') editor.refresh();
+  if (name==='editor')  editor.refresh();
+  if (name==='history') renderHistory();
 }
 
+// ── Terminal helpers ──────────────────────────────────────────
 function tLog(txt, cls='out') {
   const d = document.createElement('div');
   d.className = `tl ${cls}`;
@@ -430,13 +465,15 @@ function tLog(txt, cls='out') {
 }
 function tClear() { document.getElementById('terminal').innerHTML = ''; }
 
+// ── Pyodide ───────────────────────────────────────────────────
 let pyodide = null;
 (async () => {
   try {
     pyodide = await loadPyodide({ indexURL:'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/' });
     document.getElementById('loadingOverlay').style.display = 'none';
     tLog('✅ بيئة Python جاهزة', 'pass');
-    tLog(`📋 عدد الـ test cases: ${testCases.length}`, 'info');
+    if (hasTests) tLog(`📋 عدد الـ test cases: ${testCases.length}`, 'info');
+    else          tLog('⚠️ لا توجد test cases لهذه المسألة — يمكنك تشغيل كودك بحرية', 'warn');
     tLog('─────────────────────────────', 'sep');
   } catch(e) {
     document.getElementById('loadingOverlay').innerHTML =
@@ -446,39 +483,13 @@ let pyodide = null;
 
 let lastResults = [];
 
-// ✅ التحقق من أن الكود يحتوي على class Solution والدالة المطلوبة
-function validateCode(code, funcName) {
-  if (!code.includes('class Solution')) {
-    return `⚠️ الكود يجب أن يحتوي على "class Solution"\nمثال:\nclass Solution:\n    def ${funcName}(self, ...):\n        ...`;
-  }
-  if (!code.includes(`def ${funcName}`)) {
-    return `⚠️ الكود يجب أن يحتوي على الدالة "def ${funcName}"\nتأكد من اسم الدالة الصحيح.`;
-  }
-  return null; // صحيح
-}
-
+// ── Run Code ──────────────────────────────────────────────────
+// ✅ بدون قيود على الكود — أي كود Python يُقبل ويُشغَّل
 async function runCode() {
   if (!pyodide) { showToast('⏳ Python لسا بتحمّل...'); return; }
-  if (testCases.length === 0) { showToast('⚠️ لا توجد test cases لهذه المسألة'); return; }
 
   const code    = editor.getValue();
-  const funcName = problemData.func;
-
-  // ✅ تحقق من الكود قبل التشغيل
-  const validationError = validateCode(code, funcName);
-  if (validationError) {
-    switchTab('terminal');
-    tClear();
-    tLog('❌ خطأ في الكود:', 'fail');
-    tLog(validationError, 'warn');
-    tLog('─────────────────────────────', 'sep');
-    tLog('💡 تأكد أن كودك مكتوب بهذا الشكل:', 'info');
-    tLog(`class Solution:`, 'out');
-    tLog(`    def ${funcName}(self, ...):`,'out');
-    tLog(`        # حلك هنا`, 'out');
-    showToast('⚠️ تحقق من هيكل الكود');
-    return;
-  }
+  if (!code.trim()) { showToast('⚠️ الكود فارغ'); return; }
 
   const runBtn = document.getElementById('runBtn');
   runBtn.disabled = true;
@@ -487,79 +498,113 @@ async function runCode() {
   switchTab('terminal');
   tClear();
   tLog(`▶ تشغيل: ${title}`, 'info');
-  tLog(`📋 ${testCases.length} test cases`, 'info');
-  tLog('─────────────────────────────', 'sep');
 
-  lastResults = [];
-  let allPassed = true;
+  // ── إذا فيه test cases: شغّل عليها ──────────────────────────
+  if (hasTests) {
+    tLog(`📋 ${testCases.length} test cases`, 'info');
+    tLog('─────────────────────────────', 'sep');
 
-  for (let i = 0; i < testCases.length; i++) {
-    const tc = testCases[i];
-    tLog(`\nTest ${i+1}: ${tc.label}`, 'info');
+    lastResults = [];
+    let allPassed = true;
+    const funcName = problemData.func;
 
-    try {
-      const argsJson = JSON.stringify(tc.inputs);
-      pyodide.globals.set('_args_json', argsJson);
-      const pyCode = `
+    // تحديد أسلوب الاستدعاء
+    const useClass = code.includes('class Solution') && code.includes(`def ${funcName}`);
+    const useFreeFunc = !useClass && new RegExp(`def\\s+${funcName}\\s*\\(`).test(code);
+
+    for (let i = 0; i < testCases.length; i++) {
+      const tc = testCases[i];
+      tLog(`\nTest ${i+1}: ${tc.label}`, 'info');
+      try {
+        const argsJson = JSON.stringify(tc.inputs);
+        pyodide.globals.set('_args_json', argsJson);
+
+        // ✅ يدعم class Solution أو دالة حرة
+        const callExpr = useClass
+          ? `Solution().${funcName}(*copy.deepcopy(args))`
+          : useFreeFunc
+            ? `${funcName}(*copy.deepcopy(args))`
+            : `Solution().${funcName}(*copy.deepcopy(args))`;
+
+        const pyCode = `
 import json, copy
 ${code}
-
-sol = Solution()
 args = json.loads(_args_json)
 try:
-    result = sol.${funcName}(*copy.deepcopy(args))
+    result = ${callExpr}
     _result = json.dumps({"ok": True, "result": result})
 except Exception as e:
     _result = json.dumps({"ok": False, "error": str(e)})
 `;
-      await pyodide.runPythonAsync(pyCode);
-      const output = pyodide.globals.get('_result');
-      const data   = JSON.parse(output);
+        await pyodide.runPythonAsync(pyCode);
+        const data = JSON.parse(pyodide.globals.get('_result'));
 
-      if (!data.ok) {
-        tLog(`  ❌ خطأ في الكود: ${data.error}`, 'err');
-        lastResults.push({ passed:false, label:tc.label, error:data.error, inputs:tc.inputs, expected:tc.expected });
+        if (!data.ok) {
+          tLog(`  ❌ خطأ: ${data.error}`, 'err');
+          lastResults.push({passed:false, label:tc.label, error:data.error, inputs:tc.inputs, expected:tc.expected});
+          allPassed = false;
+          continue;
+        }
+
+        const passed = problemData.compare(data.result, tc.expected);
+        lastResults.push({passed, label:tc.label, result:data.result, expected:tc.expected, inputs:tc.inputs});
+        tLog(passed ? '  ✅ صحيح' : '  ❌ خطأ', passed ? 'pass' : 'fail');
+        if (!passed) allPassed = false;
+        tLog(`  Input:    ${JSON.stringify(tc.inputs)}`, 'out');
+        tLog(`  Output:   ${JSON.stringify(data.result)}`, 'out');
+        tLog(`  Expected: ${JSON.stringify(tc.expected)}`, passed ? 'pass' : 'fail');
+      } catch(e) {
+        tLog(`  ❌ ${e.message}`, 'err');
+        lastResults.push({passed:false, label:tc.label, error:e.message, inputs:tc.inputs, expected:tc.expected});
         allPassed = false;
-        continue;
       }
+    }
 
-      const passed = problemData.compare(data.result, tc.expected);
-      lastResults.push({ passed, label:tc.label, result:data.result, expected:tc.expected, inputs:tc.inputs });
+    tLog('\n─────────────────────────────', 'sep');
+    if (allPassed) {
+      tLog('🎉 جميع الـ test cases صحيحة!', 'pass');
+      tLog('📋 انسخ كودك وضعه في شات البوت', 'info');
+      document.getElementById('copyBtn').classList.add('show');
+    } else {
+      const failed = lastResults.filter(r=>!r.passed).length;
+      tLog(`❌ ${failed} من ${testCases.length} test cases غلط`, 'fail');
+    }
+    renderTestCards();
 
-      if (passed) {
-        tLog(`  ✅ صحيح`, 'pass');
+  } else {
+    // ── لا يوجد test cases: شغّل الكود مباشرة وأظهر الـ stdout ──
+    tLog('─────────────────────────────', 'sep');
+    tLog('▶ تشغيل حر (بدون test cases)', 'info');
+    try {
+      // اعترض stdout
+      pyodide.globals.set('_free_code', code);
+      const pyRun = `
+import sys, io
+_buf = io.StringIO()
+sys.stdout = _buf
+try:
+    exec(_free_code)
+except Exception as e:
+    print(f"❌ خطأ: {e}")
+finally:
+    sys.stdout = sys.__stdout__
+_stdout_output = _buf.getvalue()
+`;
+      await pyodide.runPythonAsync(pyRun);
+      const output = pyodide.globals.get('_stdout_output') || '';
+      if (output.trim()) {
+        output.split('\n').forEach(line => tLog(line, 'out'));
       } else {
-        tLog(`  ❌ خطأ`, 'fail');
-        allPassed = false;
+        tLog('(لا يوجد output)', 'info');
       }
-      tLog(`  Input:    ${JSON.stringify(tc.inputs)}`, 'out');
-      tLog(`  Output:   ${JSON.stringify(data.result)}`, 'out');
-      tLog(`  Expected: ${JSON.stringify(tc.expected)}`, passed ? 'pass' : 'fail');
-
+      tLog('\n─────────────────────────────', 'sep');
+      tLog('✅ تم تنفيذ الكود بنجاح', 'pass');
+      document.getElementById('copyBtn').classList.add('show');
     } catch(e) {
-      // ✅ رسالة خطأ أوضح بدل NameError الخام
-      let errMsg = e.message;
-      if (errMsg.includes('Solution') && errMsg.includes('not defined')) {
-        errMsg = 'class Solution غير موجودة، تأكد من كتابة الكود بشكل صحيح';
-      }
-      tLog(`  ❌ ${errMsg}`, 'err');
-      lastResults.push({ passed:false, label:tc.label, error:errMsg, inputs:tc.inputs, expected:tc.expected });
-      allPassed = false;
+      tLog(`❌ ${e.message}`, 'err');
     }
   }
 
-  tLog('\n─────────────────────────────', 'sep');
-
-  if (allPassed) {
-    tLog('🎉 جميع الـ test cases صحيحة!', 'pass');
-    tLog('📋 انسخ كودك وضعه في شات البوت', 'info');
-    document.getElementById('copyBtn').classList.add('show');
-  } else {
-    const failed = lastResults.filter(r=>!r.passed).length;
-    tLog(`❌ ${failed} من ${testCases.length} test cases غلط، راجع الكود`, 'fail');
-  }
-
-  renderTestCards();
   runBtn.disabled = false;
   runBtn.textContent = '▶ تشغيل';
 }
@@ -567,12 +612,10 @@ except Exception as e:
 function renderTestCards() {
   const list = document.getElementById('testsList');
   list.innerHTML = '';
-
-  if (lastResults.length === 0) {
+  if (!lastResults.length) {
     list.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px;">اضغط "تشغيل" أولاً</div>';
     return;
   }
-
   lastResults.forEach((r, i) => {
     const card = document.createElement('div');
     card.className = `test-card ${r.passed ? 'pass' : 'fail'}`;
@@ -583,14 +626,59 @@ function renderTestCards() {
         ? `<div class="test-row"><span class="lbl">Error:</span><span class="val bad">${r.error}</span></div>`
         : `<div class="test-row"><span class="lbl">Output:</span><span class="val ${r.passed?'ok':'bad'}">${JSON.stringify(r.result)}</span></div>
            <div class="test-row"><span class="lbl">Expected:</span><span class="val ok">${JSON.stringify(r.expected)}</span></div>`
-      }
-    `;
+      }`;
     list.appendChild(card);
   });
-
   switchTab('tests');
 }
 
+// ── History Tab ───────────────────────────────────────────────
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  list.innerHTML = '';
+
+  if (!historyData.length) {
+    list.innerHTML = '<div class="hist-empty">📭 لم تحل أي مسألة بعد!<br><br>اختر مستوى من البوت وابدأ الحل 💪</div>';
+    return;
+  }
+
+  historyData.forEach((item, idx) => {
+    const levelMap = {'سهل':'easy','متوسط':'medium','صعب':'hard'};
+    const dotCls   = levelMap[item.level] || 'easy';
+    const levelEmoji = {'سهل':'🟢','متوسط':'🟡','صعب':'🔴'}[item.level] || '⚪';
+
+    const card = document.createElement('div');
+    card.className = 'hist-card';
+    card.innerHTML = `
+      <div class="hist-header">
+        <div class="hist-title">
+          <span class="level-dot ${dotCls}"></span>
+          ${item.title}
+        </div>
+        <span class="hist-pts">+${item.points} نقطة</span>
+      </div>
+      <div class="hist-meta">
+        <span>${levelEmoji} ${item.level}</span>
+        <span>📅 ${item.date}</span>
+      </div>
+      <div class="hist-code-wrap" id="code-${idx}">
+        <pre class="hist-code">${escHtml(item.code || 'لا يوجد كود محفوظ')}</pre>
+      </div>`;
+
+    card.addEventListener('click', () => {
+      const wrap = document.getElementById(`code-${idx}`);
+      wrap.classList.toggle('open');
+    });
+
+    list.appendChild(card);
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Copy & Reset ──────────────────────────────────────────────
 async function copyCode() {
   const code = editor.getValue().trim();
   try {
