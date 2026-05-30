@@ -120,6 +120,13 @@ footer {
   font-size:14px; font-weight:700; cursor:pointer; transition:all .2s;
 }
 .btn-run:disabled { background:var(--border); color:var(--muted); cursor:not-allowed; }
+.btn-copy {
+  flex:1; background:var(--green); color:#0d1117; border:none;
+  padding:10px; border-radius:8px; font-family:'Tajawal',sans-serif;
+  font-size:13px; font-weight:700; cursor:pointer; transition:all .2s;
+  display:none;
+}
+.btn-copy.show { display:block; }
 
 /* Pyodide overlay */
 #loadingOverlay {
@@ -191,6 +198,7 @@ footer {
 
 <footer>
   <button class="btn-run" id="runBtn" onclick="runCode()">▶ تشغيل</button>
+  <button class="btn-copy" id="copyBtn" onclick="copyCode()">📋 انسخ كودك وضعه في شات البوت</button>
 </footer>
 
 <div class="toast" id="toast"></div>
@@ -544,42 +552,8 @@ except Exception as e:
 
   if (allPassed) {
     tLog('🎉 جميع الـ test cases صحيحة!', 'pass');
-    tLog('⏳ إضافة النقاط خلال 5 ثواني...', 'info');
-
-    let sec = 5;
-    const interval = setInterval(async () => {
-      sec--;
-      if (sec > 0) {
-        tLog(`${sec}...`, 'warn');
-      } else {
-        clearInterval(interval);
-        const chatId = tg.initDataUnsafe?.user?.id;
-        const signal = JSON.stringify({ action: 'solve', slug, title, passed: true });
-
-        // نحاول sendData أولاً (يشتغل لو فُتح من زر web_app مباشرة)
-        let sent = false;
-        try {
-          tg.sendData(signal);
-          sent = true;
-        } catch(e) {}
-
-        // fallback: Bot API بدون ما يظهر الكود في الشات
-        if (!sent && chatId) {
-          try {
-            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: chatId,
-                text: `__SOLVED__\n${JSON.stringify({ slug, title, passed: true })}`
-              })
-            });
-          } catch(e) {}
-        }
-
-        tg.close();
-      }
-    }, 1000);
+    tLog('📋 انسخ كودك وضعه في شات البوت', 'info');
+    document.getElementById('copyBtn').classList.add('show');
 
   } else {
     const failed = lastResults.filter(r=>!r.passed).length;
@@ -624,6 +598,21 @@ function renderTestCards() {
 }
 
 // ══════════════════════════════
+// نسخ الكود وإغلاق المحرر
+// ══════════════════════════════
+async function copyCode() {
+  const code = editor.getValue().trim();
+  try {
+    await navigator.clipboard.writeText(code);
+    showToast('✅ تم النسخ! ضعه في شات البوت');
+  } catch(e) {
+    // fallback لو clipboard ما اشتغل
+    showToast('✅ الكود جاهز للنسخ');
+  }
+  setTimeout(() => tg.close(), 800);
+}
+
+// ══════════════════════════════
 // مسح
 // ══════════════════════════════
 function resetEditor() {
@@ -632,6 +621,7 @@ function resetEditor() {
   editor.focus();
   switchTab('editor');
   lastResults = [];
+  document.getElementById('copyBtn').classList.remove('show');
 }
 
 // ══════════════════════════════
